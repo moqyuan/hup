@@ -1,0 +1,9 @@
+﻿<?php
+	$db_host = "127.0.0.1";
+	$db_name = "hupms";
+	$db_user = "yuan";
+	$db_pass = "19870529";
+	$mydbLink = mysql_connect($db_host, $db_user, $db_pass) or die("数据库连接失败");
+	mysql_select_db($db_name, $mydbLink) or die ("数据库打开失败");
+	mysql_query("SET NAMES utf8");
+?>

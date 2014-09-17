@@ -1,0 +1,30 @@
+body {   
+    padding-top: 68px;
+}  
+  
+a {
+	color:#000000;
+}
+a:hover,
+a:focus {
+  color: #d58512;
+}
+
+.sm2 {
+	display:inline;
+	width:45px;
+}
+
+.sm4 {
+	display:inline;
+	width:70px;
+}
+
+.sm6 {
+	display:inline;
+	width:90px;
+}
+
+.right{
+	float: right;
+}

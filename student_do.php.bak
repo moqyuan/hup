@@ -1,0 +1,618 @@
+<?php
+ini_set('default_charset','utf-8');
+include("config.php");
+$today=Date('Y-m-d');
+
+//   Type 
+//   0 - BuyClass; 
+//   1 - BuyVip;
+
+if(isset($_COOKIE["Username"]) && $_COOKIE["Username"]!='' && $_COOKIE["UserLevel"]>0){
+//buy
+if( strtolower($_GET["a"]) == "buy" && isset($_POST)){
+	if(!isset($_POST['bmoney']) || $_POST['bmoney']==''){
+		echo "<script language=Javascript>alert('金额没写');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if($_POST['bmoney']>10000 || $_POST['bmoney']<0){
+		echo "<script language=Javascript>alert('金额必须是0-10000的整数');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+
+	if(!isset($_POST['bcardtype']) || $_POST['bcardtype']==''){
+		echo "<script language=Javascript>alert('要选择卡种');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+
+	$sql = "select * from hupms_student where Id='$_POST[bid]' and Del = 0"; 
+	$result = mysql_query($sql); 
+	$num = mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('该学生不存在');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+
+	if($rs->No == '' or $rs->No == null){
+		$sno = sprintf("%04d", $_POST["bsno"]);
+		if($sno>=0001 and $sno<=4999){
+			$sql = "select * from hupms_student where No='$sno'"; 
+			$result = mysql_query($sql); 
+			$num = mysql_num_rows($result);
+			if($num>0){
+				echo "<script language=Javascript>alert('学员卡号已被使用，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+			$sql = "select * from hupms_invalid where No='$sno'"; 
+			$result = mysql_query($sql); 
+			$numv = mysql_num_rows($result);
+			if($numv>0){
+				echo "<script language=Javascript>alert('此学员卡已作废，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+		}else{
+			echo "<script language=Javascript>alert('学员卡号必须为0001-4999之间');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}
+	}else{
+		$sno = $rs->No;
+	}
+
+	$ct = 0;
+	$vdate = "'$today'";
+	$lc = 0;
+	switch($_POST['bcardtype']){
+        case '0': $ct = 0; $v=2; $lc = 10; $cn='课时卡'; break;
+        case '1': $ct = 1; $v=1; $lc = 0; $cn='月卡'; break;
+        case '2': $ct = 1; $v=3; $lc = 0; $cn='季卡'; break;
+        case '3': $ct = 1; $v=6; $lc = 0; $cn='半年卡'; break;
+        case '4': $ct = 1; $v=12; $lc = 0; $cn='年卡'; break;
+        default : $ct = 0; $v=0; $lc = 0;
+	}
+
+	if( $rs->Vdate >= $today){
+		if( $rs->Cardtype == 0  &&  $ct == 0 ){
+			$vdate = "Date_Add('$rs->Vdate', INTERVAL 2 MONTH)";
+			$lc = $rs->Lcount + $lc;
+		}elseif( $rs->Cardtype == 0  &&  $ct == 1 ){
+			$vdate = "Date_Add('$today', INTERVAL $v MONTH)";
+			$lc = 0;
+		}elseif ( $rs->Cardtype == 1 &&  $ct == 0 ) {
+			$vdate = "Date_Add('$today', INTERVAL 2 MONTH)";
+			$lc = 10;
+		}elseif ( $rs->Cardtype == 1 &&  $ct == 1 ) {
+			$vdate = "Date_Add('$rs->Vdate', INTERVAL $v MONTH)";
+			$lc = 0;
+		}
+	}else{
+		if( $ct == 0){
+			$vdate = "Date_Add('$today', INTERVAL 2 MONTH)";
+			$lc = 10;
+		}elseif ( $ct ==1) {
+			$vdate = "Date_Add('$today', INTERVAL $v MONTH)";
+			$lc = 0;
+		}
+	}
+	$sql1="UPDATE hupms_student SET No = '$sno', Lcount = $lc, Vdate = $vdate, Cardtype = $ct where Id = '$_POST[bid]'";
+	$result1=mysql_query($sql1);
+	$content= "学员 ".$rs->Name." 购买课程，课程种类：".$cn."，金额：".$_POST['bmoney']."元";
+	$sql2="INSERT INTO hupms_record_b (Datetime, Content, Type, Fee, Sid) VALUES ( now(), '$content', 0, $_POST[bmoney], $rs->Id)";
+	$result2=mysql_query($sql2);
+	if($result1 && $result2){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = $content;
+		$Log_Detail = str_replace('\'', '|', $sql1."--".$sql2);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,DoTime,Detail) VALUES ('$Log_Content','$Log_Name','$Log_Username',now(),'$Log_Detail')";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php?id=".$rs->Id."';</script>";
+		exit;
+	}else{
+		echo $sql1."<br>".$sql2;
+		
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+		
+	}
+
+
+	
+
+}
+
+//add
+if( strtolower($_GET["a"]) == "add"){
+
+	if(!isset($_POST["money"]) && !isset($_POST["sname"]) ){
+		echo "<script language=Javascript>alert('访问页面错误，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if($_POST["sno"]!=''){
+		$sno=sprintf("%04d", $_POST["sno"]);
+		if($sno>=0001 and $sno<=4999){
+			$sql = "select * from hupms_student where No='$sno'"; 
+			$result = mysql_query($sql); 
+			$num = mysql_num_rows($result);
+			if($num>0){
+				echo "<script language=Javascript>alert('学员卡号已被使用，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+			$sql = "select * from hupms_invalid where No='$sno'"; 
+			$result = mysql_query($sql); 
+			$numv = mysql_num_rows($result);
+			if($numv>0){
+				echo "<script language=Javascript>alert('此学员卡已作废，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+		}else{
+			echo "<script language=Javascript>alert('学员卡号必须为0001-4999之间');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}
+	}
+	if($_POST["snovip"]!=''){
+		if($_POST["snovip"]>=5001 and $_POST["snovip"]<=9999){
+			$sql = "select * from hupms_student where Novip='$_POST[snovip]'"; 
+			$result = mysql_query($sql); 
+			$num = mysql_num_rows($result);
+			if($num>0){
+				echo "<script language=Javascript>alert('会员卡号已被使用，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+			$sql = "select * from hupms_invalid where Novip='$_POST[snovip]'"; 
+			$result = mysql_query($sql); 
+			$numvip = mysql_num_rows($result);
+			if($numvip>0){
+				echo "<script language=Javascript>alert('此会员卡已作废，请使用其他卡号');";
+				echo "javascript:history.back()</script>";
+				exit;
+			}
+		}else{
+			echo "<script language=Javascript>alert('会员卡号必须为5001-9999之间');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}	
+	}
+
+	$ct = 0;
+	$vdate = "'$today'";
+	$lc = 0;
+	switch($_POST['cardtype']){
+        case '0': $ct = 0; $vdate="Date_Add('$today',INTERVAL 2 MONTH)"; $lc = 10; break;
+        case '1': $ct = 1; $vdate="Date_Add('$today',INTERVAL 1 MONTH)"; $lc = 0; break;
+        case '2': $ct = 1; $vdate="Date_Add('$today',INTERVAL 3 MONTH)"; $lc = 0; break;
+        case '3': $ct = 1; $vdate="Date_Add('$today',INTERVAL 6 MONTH)"; $lc = 0; break;
+        case '4': $ct = 1; $vdate="Date_Add('$today',INTERVAL 12 MONTH)"; $lc = 0; break;
+        default : $ct = 0; $vdate="'$today'"; $lc = 0;
+	}
+	$vipdate="'$today'";
+	if($_POST['snovip']!=''){
+		$vipdate="Date_Add('$today',INTERVAL 12 MONTH)";
+	}
+
+	if($_POST["way"] == null) {
+		$way = "";
+	}else{
+		$way = implode($_POST["way"], ',');
+	}
+
+	if($_POST["interest"] == null) {
+		$interest = "";
+	}else{
+		$interest = implode($_POST["interest"], ',');
+	}
+	echo $interest;
+	
+
+	$sql1 = "INSERT INTO hupms_student(
+		No,Novip,Cardtype,Name,
+		Birth,Sex,Identity,Tel,Mail,
+		Address,Isstu,School,Way,Way_other,
+		Learned,Interest,Intro,Lcount,Vdate,Vipdate,Createtime
+	) VALUES(
+		'$sno','$_POST[snovip]','$ct','$_POST[sname]',
+		'$_POST[birth]','$_POST[sex]','$_POST[sidentity]','$_POST[stel]','$_POST[smail]',
+		'$_POST[saddress]','$_POST[isstu]','$_POST[sschool]','$way','$_POST[wayother]',
+		'$_POST[learned]','$interest','$_POST[sintro]','$lc',$vdate,$vipdate,now()
+	)";
+	$result1 = mysql_query($sql1);
+	if($result1){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "建立新学员:" . $_POST["sname"];
+		$Log_Detail = str_replace('\'', '|', $sql1);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,DoTime,Detail) VALUES ('$Log_Content','$Log_Name','$Log_Username',now(),'$Log_Detail')";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='students.php';</script>";
+		exit;
+	}else{
+		echo "error:".$sql1;
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+
+}
+
+//Delete
+if( strtolower($_GET["a"]) == "delete" && isset($_GET["id"])){
+	$sql="select * from hupms_student where Id=$_GET[id]";
+	$result=mysql_query($sql);
+	$rs=mysql_fetch_object($result);
+	$sql = "update hupms_student set Del= 1 where Id='$_GET[id]' "; 
+	$result = mysql_query($sql); 
+	if($result){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "冻结了".$rs->No."号学员".$rs->Name;
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";	
+		echo "location.href='students.php';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//Recover
+if( strtolower($_GET["a"]) == "recover" && isset($_GET["id"])){
+	$sql="select * from hupms_student where Id=$_GET[id]";
+	$result=mysql_query($sql);
+	$rs=mysql_fetch_object($result);
+	$sql = "update hupms_student set Del= 0 where Id='$_GET[id]' "; 
+	$result = mysql_query($sql); 
+	if($result){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "恢复了".$rs->No."号学员".$rs->Name;
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";	
+		echo "location.href='students.php';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//update
+if( strtolower($_GET["a"]) == "update" && isset($_GET["id"])){
+	$sql="select * from hupms_student where id=$_GET[id]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('没有所需要的id，请重新选择');";
+		echo "location.href='student.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if( $_POST["sname"]=="" ){
+		echo "<script language=Javascript>alert('姓名不得为空，请重新输入');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$sql = "select * from hupms_student where Name='$_POST[sname]' and Id!=$_GET[id]"; 
+	$result = mysql_query($sql); 
+	$num = mysql_num_rows($result);
+	if($num>0){
+		echo "<script language=Javascript>alert('姓名已被使用，请使用其他姓名');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	
+	$sql1 = "update hupms_student set 
+		Name='$_POST[sname]',
+		Birth='$_POST[birth]',
+		Sex='$_POST[sex]',
+		Identity='$_POST[sidentity]',
+		Tel='$_POST[stel]',
+		Mail='$_POST[smail]',
+		Address='$_POST[saddress]',
+		Isstu='$_POST[isstu]',
+		School='$_POST[sschool]',
+		Way='$_POST[way]',
+		Way_other='$_POST[wayother]',
+		Learned='$_POST[learned]',
+		Interest='$_POST[interest]',
+		Intro='$_POST[sintro]' where id=$_GET[id];";
+	$result1 = mysql_query($sql1);
+	if($result1){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "修改".$rs->No."号学员".$rs->Name."的学员信息";
+		$Log_Detail = str_replace('\'', '|', $sql1);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php?id=".$_GET['id']."';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//buyvip
+if( strtolower($_GET["a"]) == "buyvip" && isset($_GET["id"])){
+	$sql="select * from hupms_student where id= $_GET[id]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('错误，没有所需要的id，该行为对系统不安全，请联系MoQ');";
+		echo "location.href='student.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if($rs->Novip != ''){
+		echo "<script language=Javascript>alert('该学生已有会员卡".$rs->Novip."，请刷新页面');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+
+	if($_POST["buyvip_no"]>=5001 and $_POST["buyvip_no"]<=9999){
+		$sql = "select * from hupms_student where Novip='$_POST[buyvip_no]'"; 
+		$result = mysql_query($sql); 
+		$num = mysql_num_rows($result);
+		if($num>0){
+			echo "<script language=Javascript>alert('会员卡号已被使用，请使用其他卡号');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}
+		$sql = "select * from hupms_invalid where Novip='$_POST[buyvip_no]'"; 
+		$result = mysql_query($sql); 
+		$numvip = mysql_num_rows($result);
+		if($numvip>0){
+			echo "<script language=Javascript>alert('此会员卡已作废，请使用其他卡号');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}
+	}else{
+		echo "<script language=Javascript>alert('会员卡号必须为5001-9999之间');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+
+	$sql1 = "UPDATE hupms_student set Novip='$_POST[buyvip_no]', Vipdate = Date_Add('$today',INTERVAL 12 MONTH) where Id=$_GET[id];";
+	$result1 = mysql_query($sql1);
+	$content = "为".$rs->No."号学员 ".$rs->Name." 添加会员卡".$_POST["buyvip_no"]."，收费".$_POST["buyvip_money"];
+	$sql2 = "INSERT INTO hupms_record_b ( Datetime, Content, Type, Fee, Sid )VALUES( now(), '$content', 1, $_POST[buyvip_money], $_GET[id] ) ";
+	$result2 = mysql_query($sql2);
+	if($result1 & $result2){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "为".$rs->No."号学员".$rs->Name."添加会员卡".$_POST["buyvip_no"]."，收费".$_POST["buyvip_money"];
+		$Log_Detail = str_replace('\'', '|', $sql1.$sql2);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,Detail,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username','$Log_Detail',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php?id=".$_GET['id']."';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//charge
+if( strtolower($_GET["a"]) == "charge" && isset($_GET["id"])){
+	if(!isset($_POST['charge_money'])){
+		echo "<script language=Javascript>alert('错误，该行为对系统不安全，请联系MoQ');";
+		echo "location.href='students.php'</script>";
+		exit;
+	}
+	$sql="select * from hupms_student where id= $_GET[id]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('错误，该行为对系统不安全，请联系MoQ');";
+		echo "location.href='students.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if($rs->Novip == ''){
+		echo "<script language=Javascript>alert('该学生没有会员卡，请先购买会员卡再充值');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$moneyleft = $rs->Moneyleft + $_POST['charge_money'];
+	$content = "会员卡充值，卡号【".$rs->Novip."】，金额【".$_POST['charge_money']."】";
+	$sql1 = "UPDATE hupms_student set Moneyleft='$moneyleft' where Id=$_GET[id];";
+	$result1 = mysql_query($sql1);
+	$sql2 = "INSERT INTO hupms_record_v ( Sid, Novip, Content, Fee, Type, Datetime )VALUES( $_GET[id], '$rs->Novip', '$content', $_POST[charge_money], 1, now() ) ";
+	$result2 = mysql_query($sql2);
+	if($result1 & $result2){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "会员卡充值，卡号【".$rs->Novip."】，金额【".$_POST['charge_money']."】";
+		$Log_Detail = str_replace('\'', '|', $sql1.$sql2);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,Detail,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username','$Log_Detail',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php?id=".$_GET['id']."';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+
+//continue
+if( strtolower($_GET["a"]) == "continue" && isset($_GET["id"])){
+	if(!isset($_POST['continue_money'])){
+		echo "<script language=Javascript>alert('错误，该行为对系统不安全，请联系MoQ');";
+		echo "location.href='students.php'</script>";
+		exit;
+	}
+	$sql="select * from hupms_student where id= $_GET[id]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('错误，该行为对系统不安全，请联系MoQ');";
+		echo "location.href='students.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if($rs->Novip == ''){
+		echo "<script language=Javascript>alert('该学生没有会员卡，请先购买会员卡再充值');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if($today >= $rs->Vipdate){
+		$vipdate = "Date_Add('$today',INTERVAL 12 MONTH)";
+	}elseif($today < $rs->Vipdate){
+		$vipdate = "Date_Add('$rs->Vipdate',INTERVAL 12 MONTH)";
+	}
+	$content = "会员卡续期一年，卡号【".$rs->Novip."】，金额【".$_POST['continue_money']."】";
+	$sql1 = "UPDATE hupms_student set Vipdate=$vipdate where Id=$_GET[id];";
+	$result1 = mysql_query($sql1);
+	$sql2 = "INSERT INTO hupms_record_v ( Sid, Novip, Content, Fee, Type, Datetime )VALUES( $_GET[id], '$rs->Novip', '$content', $_POST[continue_money], 2, now() ) ";
+	$result2 = mysql_query($sql2);
+	if($result1 & $result2){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "会员卡续卡一年，卡号【".$rs->Novip."】，金额【".$_POST["continue_money"]."】";
+		$Log_Detail = str_replace('\'', '|', $sql1.$sql2);
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,Detail,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username','$Log_Detail',now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php?id=".$_GET['id']."';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//lcount
+if( strtolower($_GET["a"]) == "lcount" ){
+	if($_COOKIE["UserLevel"]!=5){
+	  echo "<script language=Javascript>alert('不好意思哈，你权限还不够，问问Sim或MoQ怎么回事吧。');";
+	  echo "javascript:history.back()</script>";
+	  exit;
+	}
+	$sql="select * from hupms_student where id=$_POST[sid]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('错误，没有所需要的id，请联系MoQ');";
+		echo "location.href='student.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if( $_POST["slcount"]=="" ){
+		echo "<script language=Javascript>alert('输入课时不得为空，请重新输入');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if( $_POST["slcount"]<=0 or $_POST["slcount"]>=9999 ){
+		echo "<script language=Javascript>alert('您输入的好像不是一个合理的数字，请重新输入');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if( $_POST["sreason"]=="" ){
+		echo "<script language=Javascript>alert('必须输入改动原因，因为这不是一个普通的改动');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$sql1 = "update hupms_student set Lcount='$_POST[slcount]' where id=$_POST[sid];";
+	$result1 = mysql_query($sql1);
+	if($result1){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "修改".$rs->No."号学员".$rs->Name."的课时信息";
+		$Log_Detail = "课时设为:".$_POST["slcount"]."，修改原因:".$_POST["sreason"];
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,Detail,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username',$Log_Detail,now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+//vdate
+if( strtolower($_GET["a"]) == "vdate" ){
+	if($_COOKIE["UserLevel"]!=5){
+	  echo "<script language=Javascript>alert('不好意思哈，你权限还不够，问问Sim或MoQ怎么回事吧。');";
+	  echo "javascript:history.back()</script>";
+	  exit;
+	}
+	$sql="select * from hupms_student where id=$_POST[sid]";
+	$result=mysql_query($sql);
+	$num =mysql_num_rows($result);
+	if($num <=0){
+		echo "<script language=Javascript>alert('错误，没有所需要的id，请联系MoQ');";
+		echo "location.href='student.php'</script>";
+		exit;
+	}
+	$rs=mysql_fetch_object($result);
+	if( $_POST["svdate"]=="" ){
+		echo "<script language=Javascript>alert('输入日期不得为空，请重新输入');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$chd = explode("-", $_POST["svdate"]);
+	if(isset($chd[2])){
+		if(!checkdate($chd[1], $chd[2], $chd[0])){
+			echo "<script language=Javascript>alert('输入的日期有误，请参照格式重新输入');";
+			echo "javascript:history.back()</script>";
+			exit;
+		}
+	}else{
+		echo "<script language=Javascript>alert('输入的日期有误，请参照格式重新输入');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	if( $_POST["sreason"]=="" ){
+		echo "<script language=Javascript>alert('必须输入改动原因，因为这不是一个普通的改动');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+	$sql1 = "update hupms_student set Vdate='$_POST[svdate]' where id=$_POST[sid];";
+	$result1 = mysql_query($sql1);
+	if($result1){
+		$Log_Username = $_COOKIE["Username"];
+		$Log_Name = $_COOKIE["Name"];
+		$Log_Content = "修改".$rs->No."号学员".$rs->Name."的有效期信息";
+		$Log_Detail = "有效期设为:".$_POST["vdate"]."，修改原因:".$_POST["sreason"];
+		$sql_log = "INSERT INTO hupms_log(Content,Name,Username,Detail,DoTime) VALUES ('$Log_Content','$Log_Name','$Log_Username',$Log_Detail,now())";
+		$result_log = mysql_query($sql_log);
+		echo "<script language=Javascript>";
+		echo "location.href='student.php';</script>";
+		exit;
+	}else{
+		echo "<script language=Javascript>alert('写入数据库失败，请联系管理员');";
+		echo "javascript:history.back()</script>";
+		exit;
+	}
+}
+
+}
+?>
